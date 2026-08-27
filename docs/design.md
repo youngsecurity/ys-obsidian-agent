@@ -7,12 +7,12 @@ THE agnostic agent in Obsidian. An Obsidian desktop plugin that hosts a real cod
 [obsidian-copilot](https://github.com/logancyang/obsidian-copilot) proves the concept but carries constraints this project rejects:
 
 - Skills are discovered and managed inside the vault (`copilot/skills`, `.claude/skills`, builtin seeding, symlink lifecycle, migration flows). This project wants skills to live in the user's global agent environment (`~/.agents/skills`) and never clutter the vault.
-- Roughly 277k lines of TypeScript, most of which serves Copilot Plus entitlements, hosted models, Miyo search, LangChain Quick Chat, Projects, and Symposium. None of that is wanted here.
+- Roughly 277k lines of TypeScript (agentMode alone is ~93k, the LangChain `LLMProviders/` layer ~19k), most of which serves Copilot Plus entitlements, hosted models, Miyo search, LangChain Quick Chat, Projects, Symposium, a component gallery, and builtin relay skills that call back into Copilot infrastructure. None of that is wanted here.
 - AGPL-3.0 license. This repo is MIT.
 
 ## Licensing constraint (hard rule)
 
-obsidian-copilot is AGPL-3.0. This repo is MIT. **Never copy, port, or mechanically derive code from the copilot fork into this repo.** The fork (`~/github/_youngsecurity-net/ys-obsidian-copilot`) is a reading reference for architecture ideas and Electron gotchas only. All code here is written fresh.
+obsidian-copilot is AGPL-3.0. This repo is MIT. **Never copy, port, or mechanically derive code from the copilot fork into this repo.** The fork (`~/github/_youngsecurity-net/ys-obsidian-copilot`) is a reading reference only. Worth reading there: the `src/agentMode/` layering rules, node path and shebang resolution (`src/agentMode/acp/nodeShebangPath.ts`), subprocess lifecycle handling, and the esbuild config for Obsidian packaging. All code here is written fresh.
 
 ## Goals
 
@@ -30,7 +30,7 @@ obsidian-copilot is AGPL-3.0. This repo is MIT. **Never copy, port, or mechanica
 
 ## Backend strategy
 
-**Phase 1: pi via RPC mode.** `pi --mode rpc` speaks strict JSONL over stdin/stdout: commands in (`prompt`, `steer`, `follow_up`, `abort`), responses and streamed events out. The pi package ships a subprocess TypeScript client (`src/modes/rpc/rpc-client.ts` in `@earendil-works/pi-coding-agent`), so the framing does not need to be rewritten. Delegating to pi means skills, extensions, AGENTS.md context, provider auth, and session persistence all come from the user's existing global setup for free.
+**Phase 1: pi via RPC mode.** `pi --mode rpc` speaks strict JSONL over stdin/stdout: commands in (`prompt`, `steer`, `follow_up`, `abort`), responses and streamed events out. The pi package ships a subprocess TypeScript client (`src/modes/rpc/rpc-client.ts` in `@earendil-works/pi-coding-agent`), so the framing does not need to be rewritten. Delegating to pi means skills, extensions, AGENTS.md context, provider auth, and session persistence all come from the user's existing global setup for free. One deliberate exception: pi themes style pi's own TUI and do not carry over, because this plugin renders its own chat UI.
 
 **Phase 2: ACP-generic backend.** The Agent Client Protocol is the same shape: subprocess, JSON-RPC over stdio, streamed session updates. `@agentclientprotocol/sdk` handles the wire protocol. Claude Code (`claude-code-acp`), Codex (`codex-acp`), opencode, and Gemini CLI all speak it. Adding this later is a new `backends/acp/` implementation behind the same contract.
 
