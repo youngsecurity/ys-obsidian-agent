@@ -1,0 +1,10 @@
+{
+  "id": "ys-obsidian-agent",
+  "name": "YS Obsidian Agent",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "THE agnostic agent in Obsidian. Hosts a coding-agent harness (pi first) inside your vault.",
+  "author": "Young Security",
+  "authorUrl": "https://github.com/youngsecurity",
+  "isDesktopOnly": true
+}

@@ -87,5 +87,5 @@ Rules:
 ## Open questions
 
 - Tool approval semantics over pi RPC (gotcha 5).
-- Whether to render with React or plain DOM. Decide at milestone 1 based on how much trail complexity milestone 3 actually needs.
+- ~~Whether to render with React or plain DOM.~~ Resolved at milestone 1: plain DOM via Obsidian's element helpers. The milestone 1 pane needs no component framework, and Obsidian's `createDiv`/`createEl` API covers it. Revisit at milestone 3 only if trail rendering (streaming deltas, collapsible tool calls) proves painful without a framework.
 - Session persistence: rely on pi's own session storage (preferred, zero plugin code) versus mirroring a transcript in plugin data for instant pane restore.

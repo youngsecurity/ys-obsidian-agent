@@ -1,0 +1,27 @@
+.ys-agent-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: var(--size-4-2);
+}
+
+.ys-agent-transcript {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.ys-agent-placeholder {
+  color: var(--text-muted);
+  padding: var(--size-4-4);
+  text-align: center;
+}
+
+.ys-agent-composer {
+  flex-shrink: 0;
+  padding: var(--size-4-2);
+}
+
+.ys-agent-input {
+  width: 100%;
+  resize: vertical;
+}

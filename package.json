@@ -1,0 +1,21 @@
+{
+  "name": "ys-obsidian-agent",
+  "version": "0.1.0",
+  "description": "THE agnostic agent in Obsidian. Hosts a coding-agent harness (pi first) inside your vault.",
+  "main": "main.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun esbuild.config.mjs",
+    "build": "tsc -noEmit && bun esbuild.config.mjs production",
+    "vault": "bash scripts/dev-vault.sh"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.24.2",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.2"
+  }
+}
