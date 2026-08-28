@@ -73,7 +73,7 @@ Rules:
 2. **JSONL framing.** Split records on `\n` only, tolerating a trailing `\r`. Node `readline` is not protocol-compliant because it also splits on U+2028 and U+2029, which are valid inside JSON strings. Prefer pi's shipped RPC client; if hand-rolling, use a strict splitter.
 3. **Desktop only.** `isDesktopOnly: true` in `manifest.json`. Guard any accidental mobile load path.
 4. **cwd = vault root.** Spawn the backend with the vault root as its working directory so file tools and relative paths operate on the vault naturally. Resolve via the adapter's base path, desktop only.
-5. **Tool approval UX.** Verify how pi surfaces tool-call gating over RPC before designing any permission UI. Do not assume ACP-style permission requests exist in pi's protocol. Open question, resolve during milestone 2.
+5. **Tool approval UX.** Verify how pi surfaces tool-call gating over RPC before designing any permission UI. Do not assume ACP-style permission requests exist in pi's protocol. Resolved at milestone 2: pi RPC has no native permission-request protocol. Tool gating in pi is extension-driven, and extension dialogs reach the client through the extension UI sub-protocol (`extension_ui_request` on stdout, answered with `extension_ui_response` on stdin). The pi backend translates dialog requests (select, confirm, input, editor) into session-domain `UiRequest` events rendered as Obsidian modals, and `notify` into a Notice. Dismissing a modal answers `cancelled`, so the agent never hangs on a closed dialog. Remaining presentation methods (setStatus, setWidget, setTitle, set_editor_text) are fire-and-forget and intentionally ignored.
 6. **Process lifecycle.** Kill the subprocess tree on plugin unload, view close, and Obsidian quit. Handle backend crash with a visible error state and a restart affordance.
 
 ## Milestones
@@ -86,6 +86,6 @@ Rules:
 
 ## Open questions
 
-- Tool approval semantics over pi RPC (gotcha 5).
+- ~~Tool approval semantics over pi RPC.~~ Resolved at milestone 2; see gotcha 5.
 - ~~Whether to render with React or plain DOM.~~ Resolved at milestone 1: plain DOM via Obsidian's element helpers. The milestone 1 pane needs no component framework, and Obsidian's `createDiv`/`createEl` API covers it. Revisit at milestone 3 only if trail rendering (streaming deltas, collapsible tool calls) proves painful without a framework.
 - Session persistence: rely on pi's own session storage (preferred, zero plugin code) versus mirroring a transcript in plugin data for instant pane restore.

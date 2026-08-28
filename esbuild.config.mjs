@@ -47,6 +47,7 @@ const context = await esbuild.context({
     "@lezer/highlight",
     "@lezer/lr",
     ...builtins,
+    "node:*",
   ],
   plugins: [
     {

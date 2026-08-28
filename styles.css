@@ -5,15 +5,61 @@
   gap: var(--size-4-2);
 }
 
+.ys-agent-status {
+  flex-shrink: 0;
+  padding: var(--size-4-1) var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
 .ys-agent-transcript {
   flex: 1;
   overflow-y: auto;
+  padding: var(--size-4-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
 }
 
 .ys-agent-placeholder {
   color: var(--text-muted);
   padding: var(--size-4-4);
   text-align: center;
+}
+
+.ys-agent-cell {
+  border-radius: var(--radius-s);
+  padding: var(--size-4-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ys-agent-user {
+  background-color: var(--background-secondary);
+  align-self: flex-end;
+  max-width: 85%;
+}
+
+.ys-agent-assistant {
+  align-self: stretch;
+}
+
+.ys-agent-thinking {
+  color: var(--text-faint);
+  font-style: italic;
+  margin-bottom: var(--size-4-1);
+}
+
+.ys-agent-tool {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-family: var(--font-monospace);
+}
+
+.ys-agent-error {
+  color: var(--text-error);
+  background-color: var(--background-modifier-error);
 }
 
 .ys-agent-composer {
@@ -24,4 +70,9 @@
 .ys-agent-input {
   width: 100%;
   resize: vertical;
+}
+
+.ys-agent-modal-editor {
+  width: 100%;
+  min-height: 10em;
 }
