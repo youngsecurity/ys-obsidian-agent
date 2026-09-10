@@ -4,6 +4,24 @@ import { getBackendDescriptor, DEFAULT_BACKEND_ID } from "./backends/registry";
 import { AgentSession } from "./session/AgentSession";
 import { AGENT_VIEW_TYPE, AgentView } from "./ui/AgentView";
 
+/** Persisted plugin data. Resume handles are opaque and keyed by backend id. */
+interface PluginData {
+  readonly resumeHandles: Readonly<Record<string, string>>;
+}
+
+const DEFAULT_DATA: PluginData = { resumeHandles: {} };
+
+function parsePluginData(raw: unknown): PluginData {
+  if (typeof raw !== "object" || raw === null) return DEFAULT_DATA;
+  const handles = (raw as Record<string, unknown>)["resumeHandles"];
+  if (typeof handles !== "object" || handles === null) return DEFAULT_DATA;
+  const resumeHandles: Record<string, string> = {};
+  for (const [key, value] of Object.entries(handles)) {
+    if (typeof value === "string") resumeHandles[key] = value;
+  }
+  return { resumeHandles };
+}
+
 /**
  * Plugin entry: view + command registration, lifecycle (composition root).
  *
@@ -15,15 +33,23 @@ import { AGENT_VIEW_TYPE, AgentView } from "./ui/AgentView";
  * close (AgentView.onClose), plugin unload (onunload), and Obsidian quit
  * (best-effort beforeunload signal, since a detached child outlives its
  * parent).
+ *
+ * Session resume (milestone 3): the backend's own session storage is the
+ * source of truth. The plugin persists only the opaque resume handle the
+ * backend reports and hands it back on the next launch, so reopening the
+ * pane (or restarting Obsidian) replays the same conversation.
  */
 export default class YsObsidianAgentPlugin extends Plugin {
   private session: AgentSession | undefined;
+  private data: PluginData = DEFAULT_DATA;
 
   override async onload(): Promise<void> {
     if (Platform.isMobile) {
       new Notice("YS Obsidian Agent is desktop-only and will not load on mobile.");
       return;
     }
+
+    this.data = parsePluginData(await this.loadData());
 
     this.registerView(
       AGENT_VIEW_TYPE,
@@ -39,6 +65,14 @@ export default class YsObsidianAgentPlugin extends Plugin {
       name: "Open agent chat",
       callback: () => {
         void this.activateAgentView();
+      },
+    });
+
+    this.addCommand({
+      id: "new-agent-session",
+      name: "Start a new agent session",
+      callback: () => {
+        void this.startNewSession();
       },
     });
 
@@ -59,9 +93,40 @@ export default class YsObsidianAgentPlugin extends Plugin {
     if (descriptor === undefined) {
       throw new Error(`Unknown backend: ${DEFAULT_BACKEND_ID}`);
     }
-    const backend = descriptor.createBackendProcess({ vaultRootAbs: this.vaultRootAbs() });
-    this.session = new AgentSession(backend);
-    return this.session;
+    const resumeHandle = this.data.resumeHandles[descriptor.id];
+    const backend = descriptor.createBackendProcess(
+      resumeHandle === undefined
+        ? { vaultRootAbs: this.vaultRootAbs() }
+        : { vaultRootAbs: this.vaultRootAbs(), resumeHandle }
+    );
+    const session = new AgentSession(backend);
+    session.onChange(() => {
+      void this.rememberResumeHandle(descriptor.id, session.resumeHandle);
+    });
+    this.session = session;
+    return session;
+  }
+
+  private async rememberResumeHandle(backendId: string, handle: string | undefined): Promise<void> {
+    if (handle === undefined || this.data.resumeHandles[backendId] === handle) return;
+    this.data = { resumeHandles: { ...this.data.resumeHandles, [backendId]: handle } };
+    await this.saveData(this.data);
+  }
+
+  private async startNewSession(): Promise<void> {
+    await this.activateAgentView();
+    const session = this.session;
+    if (session === undefined) return;
+    if (session.state === "streaming") {
+      new Notice("Stop the agent before starting a new session.");
+      return;
+    }
+    try {
+      await session.newSession();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`New session failed: ${message}`);
+    }
   }
 
   private async releaseSession(): Promise<void> {

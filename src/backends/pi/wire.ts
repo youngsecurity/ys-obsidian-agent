@@ -17,6 +17,7 @@ export type PiWireEvent =
       readonly type: "tool_execution_start";
       readonly toolCallId: string;
       readonly toolName: string;
+      readonly args: Readonly<Record<string, unknown>>;
     }
   | { readonly type: "tool_execution_update"; readonly toolCallId: string; readonly text: string }
   | {
@@ -26,24 +27,34 @@ export type PiWireEvent =
       readonly isError: boolean;
     }
   | {
+      readonly type: "queue_update";
+      readonly steering: readonly string[];
+      readonly followUp: readonly string[];
+    }
+  | {
       readonly type: "response";
       readonly id: string | undefined;
       readonly command: string;
       readonly success: boolean;
       readonly error: string | undefined;
+      readonly data: unknown;
     }
   | { readonly type: "extension_ui_request"; readonly raw: Record<string, unknown> };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function asString(value: unknown): string | undefined {
+export function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 /** Concatenated text blocks from a pi content array (tool output). */
-function contentText(value: unknown): string {
+export function contentText(value: unknown): string {
   if (!Array.isArray(value)) return "";
   const parts: string[] = [];
   for (const block of value) {
@@ -97,7 +108,13 @@ export function parsePiWireEvent(line: string): PiWireEvent | null {
       const toolCallId = asString(value["toolCallId"]);
       const toolName = asString(value["toolName"]);
       if (toolCallId === undefined || toolName === undefined) return null;
-      return { type: "tool_execution_start", toolCallId, toolName };
+      const args = value["args"];
+      return {
+        type: "tool_execution_start",
+        toolCallId,
+        toolName,
+        args: isRecord(args) ? args : {},
+      };
     }
     case "tool_execution_update": {
       const toolCallId = asString(value["toolCallId"]);
@@ -118,6 +135,12 @@ export function parsePiWireEvent(line: string): PiWireEvent | null {
         isError: value["isError"] === true,
       };
     }
+    case "queue_update":
+      return {
+        type: "queue_update",
+        steering: stringArray(value["steering"]),
+        followUp: stringArray(value["followUp"]),
+      };
     case "response": {
       const command = asString(value["command"]);
       if (command === undefined) return null;
@@ -127,6 +150,7 @@ export function parsePiWireEvent(line: string): PiWireEvent | null {
         command,
         success: value["success"] === true,
         error: asString(value["error"]),
+        data: value["data"],
       };
     }
     case "extension_ui_request":

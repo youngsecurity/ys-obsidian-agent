@@ -65,23 +65,52 @@ export type UiResponse =
   | { readonly id: string; readonly kind: "confirmed"; readonly confirmed: boolean }
   | { readonly id: string; readonly kind: "cancelled" };
 
+/** Tool-call arguments as the backend reported them (JSON object). */
+export type ToolArgs = Readonly<Record<string, unknown>>;
+
 /**
  * The domain vocabulary the UI renders. Each backend translates its native
  * wire format into these events at its own boundary.
+ *
+ * History replay: a backend launched with a `resumeHandle` re-emits its
+ * stored transcript through this same vocabulary (`user_message`,
+ * assistant boundaries and deltas, tool start/end) before reporting
+ * `ready`, so the session state machine needs no separate history path.
  */
 export type SessionEvent =
   | { readonly kind: "state_change"; readonly state: BackendState; readonly detail?: string }
+  /**
+   * The backend learned (or changed) its persistence identity. The handle is
+   * opaque to everything outside the backend; pass it back via
+   * {@link BackendLaunchArgs.resumeHandle} to resume later.
+   */
+  | { readonly kind: "session_info"; readonly resumeHandle: string | undefined }
+  /** The backend discarded its transcript (new session). */
+  | { readonly kind: "session_reset" }
+  /** A user message that the session did not originate (history replay). */
+  | { readonly kind: "user_message"; readonly text: string }
   | { readonly kind: "assistant_message_start" }
   | { readonly kind: "text_delta"; readonly delta: string }
   | { readonly kind: "thinking_delta"; readonly delta: string }
   | { readonly kind: "assistant_message_end" }
-  | { readonly kind: "tool_start"; readonly toolCallId: string; readonly toolName: string }
+  | {
+      readonly kind: "tool_start";
+      readonly toolCallId: string;
+      readonly toolName: string;
+      readonly args: ToolArgs;
+    }
   | { readonly kind: "tool_update"; readonly toolCallId: string; readonly output: string }
   | {
       readonly kind: "tool_end";
       readonly toolCallId: string;
       readonly output: string;
       readonly isError: boolean;
+    }
+  /** Pending steer/follow-up messages changed. */
+  | {
+      readonly kind: "queue_update";
+      readonly steering: readonly string[];
+      readonly followUp: readonly string[];
     }
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "ui_request"; readonly request: UiRequest };
@@ -106,6 +135,8 @@ export interface BackendProcess {
   followUp(message: string): Promise<void>;
   /** Abort the current agent operation. */
   abort(): Promise<void>;
+  /** Discard the transcript and start a fresh persisted session. */
+  newSession(): Promise<void>;
   /** Answer a dialog {@link UiRequest}. */
   respondUi(response: UiResponse): void;
   /** Kill the subprocess tree and release resources. Idempotent. */
@@ -115,6 +146,12 @@ export interface BackendProcess {
 export interface BackendLaunchArgs {
   /** Absolute path of the vault root; becomes the subprocess cwd. */
   readonly vaultRootAbs: string;
+  /**
+   * Opaque handle from a previous `session_info` event. When set, the
+   * backend resumes that session and replays its history. A stale or
+   * unknown handle degrades to a fresh session.
+   */
+  readonly resumeHandle?: string;
 }
 
 /** One entry in the backend registry. */

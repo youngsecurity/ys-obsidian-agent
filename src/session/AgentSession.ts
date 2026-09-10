@@ -3,6 +3,7 @@ import type {
   BackendState,
   PromptInput,
   SessionEvent,
+  ToolArgs,
   UiRequest,
   UiResponse,
   Unsubscribe,
@@ -21,6 +22,7 @@ export type TranscriptItem =
       readonly kind: "tool";
       readonly toolCallId: string;
       readonly toolName: string;
+      readonly args: ToolArgs;
       readonly output: string;
       readonly done: boolean;
       readonly isError: boolean;
@@ -35,6 +37,9 @@ export type UiRequestListener = (request: UiRequest) => void;
  * a {@link BackendProcess} and maintains the transcript the UI renders.
  * Dialog requests are forwarded to a dedicated listener so the UI can present
  * modals without polling.
+ *
+ * Transcript items are immutable values replaced in place, so a renderer can
+ * detect changes per index by reference and update cells incrementally.
  */
 export class AgentSession {
   private readonly backend: BackendProcess;
@@ -43,6 +48,8 @@ export class AgentSession {
   private readonly uiRequestListeners = new Set<UiRequestListener>();
   private items: TranscriptItem[] = [];
   private stateDetail: string | undefined;
+  private handle: string | undefined;
+  private queued = 0;
 
   constructor(backend: BackendProcess) {
     this.backend = backend;
@@ -61,6 +68,16 @@ export class AgentSession {
 
   get transcript(): readonly TranscriptItem[] {
     return this.items;
+  }
+
+  /** Opaque backend persistence handle; persist it to resume later. */
+  get resumeHandle(): string | undefined {
+    return this.handle;
+  }
+
+  /** Steer and follow-up messages the backend has not delivered yet. */
+  get queuedCount(): number {
+    return this.queued;
   }
 
   onChange(listener: SessionChangeListener): Unsubscribe {
@@ -91,6 +108,11 @@ export class AgentSession {
     await this.backend.abort();
   }
 
+  /** Discard the transcript and start fresh (the backend emits the reset). */
+  async newSession(): Promise<void> {
+    await this.backend.newSession();
+  }
+
   respondUi(response: UiResponse): void {
     this.backend.respondUi(response);
   }
@@ -104,6 +126,16 @@ export class AgentSession {
     switch (event.kind) {
       case "state_change":
         this.stateDetail = event.detail;
+        break;
+      case "session_info":
+        this.handle = event.resumeHandle;
+        break;
+      case "session_reset":
+        this.items = [];
+        this.queued = 0;
+        break;
+      case "user_message":
+        this.items.push({ kind: "user", text: event.text });
         break;
       case "assistant_message_start":
         this.items.push({ kind: "assistant", text: "", thinking: "", complete: false });
@@ -130,6 +162,7 @@ export class AgentSession {
           kind: "tool",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
+          args: event.args,
           output: "",
           done: false,
           isError: false,
@@ -145,6 +178,9 @@ export class AgentSession {
           done: true,
           isError: event.isError,
         }));
+        break;
+      case "queue_update":
+        this.queued = event.steering.length + event.followUp.length;
         break;
       case "error":
         this.items.push({ kind: "error", message: event.message });

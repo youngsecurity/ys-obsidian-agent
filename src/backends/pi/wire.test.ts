@@ -59,6 +59,7 @@ describe("parsePiWireEvent", () => {
       type: "tool_execution_start",
       toolCallId: "call_1",
       toolName: "bash",
+      args: { command: "ls" },
     });
     expect(parsePiWireEvent(update)).toEqual({
       type: "tool_execution_update",
@@ -74,7 +75,13 @@ describe("parsePiWireEvent", () => {
   });
 
   test("parses responses including failures", () => {
-    const ok = JSON.stringify({ type: "response", id: "r1", command: "get_state", success: true });
+    const ok = JSON.stringify({
+      type: "response",
+      id: "r1",
+      command: "get_state",
+      success: true,
+      data: { sessionFile: "/tmp/s.jsonl" },
+    });
     const fail = JSON.stringify({
       type: "response",
       command: "set_model",
@@ -87,6 +94,7 @@ describe("parsePiWireEvent", () => {
       command: "get_state",
       success: true,
       error: undefined,
+      data: { sessionFile: "/tmp/s.jsonl" },
     });
     expect(parsePiWireEvent(fail)).toEqual({
       type: "response",
@@ -94,6 +102,21 @@ describe("parsePiWireEvent", () => {
       command: "set_model",
       success: false,
       error: "Model not found",
+      data: undefined,
+    });
+  });
+
+  test("parses queue updates, tolerating missing arrays", () => {
+    const full = JSON.stringify({ type: "queue_update", steering: ["a"], followUp: ["b", "c"] });
+    expect(parsePiWireEvent(full)).toEqual({
+      type: "queue_update",
+      steering: ["a"],
+      followUp: ["b", "c"],
+    });
+    expect(parsePiWireEvent('{"type":"queue_update"}')).toEqual({
+      type: "queue_update",
+      steering: [],
+      followUp: [],
     });
   });
 
@@ -110,7 +133,7 @@ describe("parsePiWireEvent", () => {
 
   test("returns null for malformed json and unknown events", () => {
     expect(parsePiWireEvent("not json")).toBeNull();
-    expect(parsePiWireEvent('{"type":"queue_update"}')).toBeNull();
+    expect(parsePiWireEvent('{"type":"turn_start"}')).toBeNull();
     expect(parsePiWireEvent('{"no":"type"}')).toBeNull();
   });
 });

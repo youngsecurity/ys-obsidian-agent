@@ -12,18 +12,23 @@ import type {
   UiResponse,
   Unsubscribe,
 } from "../../session/types";
+import { translateHistory } from "./history";
 import { JsonlSplitter } from "./jsonl";
-import { parsePiWireEvent, type PiWireEvent } from "./wire";
+import { asString, isRecord, parsePiWireEvent, type PiWireEvent } from "./wire";
 
-const INIT_REQUEST_ID = "ys-init";
 const KILL_GRACE_MS = 1500;
 
-interface PiBackendOptions extends BackendLaunchArgs {
+export interface PiBackendOptions extends BackendLaunchArgs {
   readonly executablePath: string;
+  /** Additional pi CLI flags appended after `--mode rpc` (tests, settings). */
+  readonly extraArgs?: readonly string[];
 }
 
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
+type PiResponse = Extract<PiWireEvent, { type: "response" }>;
+
+/** `sessionFile` from a `get_state` payload, the pi resume handle. */
+function sessionFileOf(data: unknown): string | undefined {
+  return isRecord(data) ? asString(data["sessionFile"]) : undefined;
 }
 
 /**
@@ -85,13 +90,17 @@ export class PiBackendProcess implements BackendProcess {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly listeners = new Set<SessionEventListener>();
   private readonly stdoutSplitter = new JsonlSplitter();
+  private readonly pending = new Map<string, (response: PiResponse) => void>();
+  private nextRequestId = 1;
   private currentState: BackendState = "starting";
   private stderrTail = "";
   private disposing = false;
   private exitPromise: Promise<void>;
 
   constructor(options: PiBackendOptions) {
-    this.child = spawn(options.executablePath, ["--mode", "rpc"], {
+    const args = ["--mode", "rpc", ...(options.extraArgs ?? [])];
+    if (options.resumeHandle !== undefined) args.push("--session", options.resumeHandle);
+    this.child = spawn(options.executablePath, args, {
       cwd: options.vaultRootAbs,
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
@@ -123,17 +132,52 @@ export class PiBackendProcess implements BackendProcess {
           const stderr = this.stderrTail.trim();
           this.setState("error", stderr.length > 0 ? `${detail}: ${stderr}` : detail);
         }
+        this.failPending(detail);
         resolve();
       });
     });
 
     this.child.once("error", (error: Error) => {
       this.setState("error", `Failed to start pi: ${error.message}`);
+      this.failPending(error.message);
     });
 
-    // Handshake: a successful get_state response proves the RPC protocol
-    // is live, flipping state from "starting" to "ready".
-    this.writeCommand({ type: "get_state", id: INIT_REQUEST_ID });
+    void this.start(options.resumeHandle !== undefined);
+  }
+
+  /**
+   * Handshake: a successful get_state response proves the RPC protocol is
+   * live and reveals the session file (resume handle). When resuming,
+   * replay stored history before reporting "ready" so the transcript is
+   * complete before the first prompt.
+   */
+  private async start(resuming: boolean): Promise<void> {
+    try {
+      const state = await this.request({ type: "get_state" });
+      if (!state.success) {
+        // An exit or spawn failure already reported its own error detail.
+        if (this.currentState === "starting") {
+          this.setState("error", `pi handshake failed: ${state.error ?? "unknown error"}`);
+        }
+        return;
+      }
+      this.emit({ kind: "session_info", resumeHandle: sessionFileOf(state.data) });
+      if (resuming) await this.replayHistory();
+      if (this.currentState === "starting") this.setState("ready");
+    } catch (error) {
+      // Exit and spawn failures already moved state to "error".
+      void error;
+    }
+  }
+
+  private async replayHistory(): Promise<void> {
+    const response = await this.request({ type: "get_messages" });
+    if (!response.success) {
+      this.emit({ kind: "error", message: `Could not load session history: ${response.error ?? "unknown error"}` });
+      return;
+    }
+    const messages = isRecord(response.data) ? response.data["messages"] : undefined;
+    for (const event of translateHistory(messages)) this.emit(event);
   }
 
   get state(): BackendState {
@@ -172,6 +216,27 @@ export class PiBackendProcess implements BackendProcess {
   async abort(): Promise<void> {
     this.assertWritable();
     this.writeCommand({ type: "abort" });
+  }
+
+  /**
+   * Start a fresh pi session. Pi's `new_session` response does not carry
+   * the new session file, so a follow-up `get_state` refreshes the handle.
+   */
+  async newSession(): Promise<void> {
+    this.assertWritable();
+    const response = await this.request({ type: "new_session" });
+    if (!response.success) {
+      throw new Error(response.error ?? "pi refused to start a new session");
+    }
+    if (isRecord(response.data) && response.data["cancelled"] === true) {
+      throw new Error("An extension cancelled the new session");
+    }
+    this.emit({ kind: "session_reset" });
+    const state = await this.request({ type: "get_state" });
+    this.emit({
+      kind: "session_info",
+      resumeHandle: state.success ? sessionFileOf(state.data) : undefined,
+    });
   }
 
   respondUi(response: UiResponse): void {
@@ -257,6 +322,26 @@ export class PiBackendProcess implements BackendProcess {
     this.child.stdin.write(`${JSON.stringify(command)}\n`);
   }
 
+  /** Send a command with a correlation id and resolve with its response. */
+  private request(command: Record<string, unknown>): Promise<PiResponse> {
+    const id = `ys-${String(this.nextRequestId++)}`;
+    return new Promise<PiResponse>((resolve, reject) => {
+      if (!this.child.stdin.writable) {
+        reject(new Error("pi stdin is not writable"));
+        return;
+      }
+      this.pending.set(id, resolve);
+      this.writeCommand({ ...command, id });
+    });
+  }
+
+  private failPending(reason: string): void {
+    for (const [id, resolve] of this.pending) {
+      resolve({ type: "response", id, command: "unknown", success: false, error: reason, data: undefined });
+    }
+    this.pending.clear();
+  }
+
   private handleRecord(line: string): void {
     const event = parsePiWireEvent(line);
     if (event === null) return;
@@ -288,6 +373,7 @@ export class PiBackendProcess implements BackendProcess {
           kind: "tool_start",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
+          args: event.args,
         });
         return;
       case "tool_execution_update":
@@ -301,15 +387,21 @@ export class PiBackendProcess implements BackendProcess {
           isError: event.isError,
         });
         return;
-      case "response":
-        if (event.id === INIT_REQUEST_ID && event.success && this.currentState === "starting") {
-          this.setState("ready");
+      case "queue_update":
+        this.emit({ kind: "queue_update", steering: event.steering, followUp: event.followUp });
+        return;
+      case "response": {
+        const resolve = event.id === undefined ? undefined : this.pending.get(event.id);
+        if (resolve !== undefined && event.id !== undefined) {
+          this.pending.delete(event.id);
+          resolve(event);
           return;
         }
         if (!event.success && event.error !== undefined) {
           this.emit({ kind: "error", message: `${event.command}: ${event.error}` });
         }
         return;
+      }
       case "extension_ui_request": {
         const request = translateUiRequest(event.raw);
         if (request !== null) this.emit({ kind: "ui_request", request });
