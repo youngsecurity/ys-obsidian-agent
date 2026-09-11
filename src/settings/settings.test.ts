@@ -5,6 +5,7 @@ import {
   DEFAULT_BACKEND_SETTINGS,
   DEFAULT_SETTINGS,
   parseSettings,
+  THINKING_LEVELS,
   withBackendSettings,
 } from "./settings";
 
@@ -31,6 +32,12 @@ describe("parseSettings", () => {
     expect(backendSettings(parsed, "codex")).toEqual({ executablePath: "", model: "codex/gpt-5.5", thinkingLevel: "" });
     expect(backendSettings(parsed, "pi")).toEqual(DEFAULT_BACKEND_SETTINGS);
     expect(backendSettings(parsed, "missing")).toEqual(DEFAULT_BACKEND_SETTINGS);
+  });
+
+  test("Codex ultra reasoning can be saved and displayed in the default-level dropdown", () => {
+    const settings = parseSettings({ backendId: "codex", backends: { codex: { thinkingLevel: "ultra" } } });
+    expect(backendSettings(settings, "codex").thinkingLevel).toBe("ultra");
+    expect(THINKING_LEVELS).toContain("ultra");
   });
 
   test("withBackendSettings replaces one entry immutably", () => {

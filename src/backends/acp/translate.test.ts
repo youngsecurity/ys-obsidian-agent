@@ -215,6 +215,52 @@ describe("parseSessionConfig", () => {
     expect(grouped.models.map((m) => m.id)).toEqual(["a", "b"]);
   });
 
+  test("preserves version descriptions and opaque model ids from the current Claude runtime", () => {
+    const config = parseSessionConfig({ models: {
+      currentModelId: "fable[1m]",
+      availableModels: [
+        { modelId: "default", name: "Default (recommended)", description: "Sonnet 5 · Efficient for routine tasks" },
+        { modelId: "fable[1m]", name: "Fable", description: "Fable 5.1 · Most capable for your hardest and longest-running tasks" },
+        { modelId: "haiku", name: "Haiku", description: 42 },
+      ],
+    } }, "claude-code");
+    expect(currentModel(config)).toEqual({
+      provider: "claude-code", id: "fable[1m]", name: "Fable", reasoning: false,
+      description: "Fable 5.1 · Most capable for your hardest and longest-running tasks",
+    });
+    expect(config.models[0]?.description).toBe("Sonnet 5 · Efficient for routine tasks");
+    expect(config.models[2]?.description).toBeUndefined();
+  });
+
+  test("preserves descriptions in modern config options too", () => {
+    const config = parseSessionConfig({ configOptions: [{
+      id: "model", category: "model", type: "select", currentValue: "m",
+      options: [{ value: "m", name: "Model", description: "Model version 2" }],
+    }] }, "codex");
+    expect(currentModel(config)?.description).toBe("Model version 2");
+  });
+
+  test("new Codex adapter uses modern model ids, not legacy model/effort combinations", () => {
+    const config = parseSessionConfig({
+      models: { currentModelId: "gpt-6-astra[high]", availableModels: [
+        { modelId: "gpt-6-astra[high]", name: "6 Astra (high)" },
+        { modelId: "gpt-6-astra[ultra]", name: "6 Astra (ultra)" },
+      ] },
+      configOptions: [
+        { id: "model", category: "model", type: "select", currentValue: "gpt-6-astra", options: [
+          { value: "gpt-6-astra", name: "6 Astra", description: "Our most capable model for complex, demanding work." },
+        ] },
+        { id: "reasoning_effort", category: "thought_level", type: "select", currentValue: "high", options: [
+          { value: "high", name: "High" }, { value: "max", name: "Max" }, { value: "ultra", name: "Ultra" },
+        ] },
+      ],
+    }, "codex");
+    expect(config.models).toHaveLength(1);
+    expect(currentModel(config)?.id).toBe("gpt-6-astra");
+    expect(config.modelMechanism).toBe("config_option");
+    expect(config.thinkingLevels).toEqual(["high", "max", "ultra"]);
+  });
+
   test("config_option_update replaces only the categories it carries", () => {
     const base = parseSessionConfig(codex, "codex");
     const updated = applyConfigOptionUpdate(

@@ -2,6 +2,7 @@ import { ItemView, Menu, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 
 import type { AgentSession } from "../session/AgentSession";
 import { type ModelInfo, modelKey, type Unsubscribe } from "../session/types";
+import { modelLabel } from "./modelLabel";
 import { TranscriptRenderer } from "./transcriptRenderer";
 import { presentUiRequest } from "./uiRequestModals";
 
@@ -282,7 +283,7 @@ export class AgentView extends ItemView {
     for (const model of models) {
       menu.addItem((item) =>
         item
-          .setTitle(`${model.provider} · ${model.name}`)
+          .setTitle(`${model.provider} · ${modelLabel(model)}`)
           .setChecked(modelKey(model) === currentKey)
           .onClick(() => {
             void this.chooseModel(model);
@@ -364,6 +365,7 @@ export class AgentView extends ItemView {
     if (session.queuedCount > 0) parts.push(`· ${String(session.queuedCount)} queued`);
     this.statusTextEl.setText(parts.join(" "));
     this.modelButton.setText(session.model?.name ?? "model…");
+    this.modelButton.setAttribute("title", session.model === undefined ? "Choose a model" : modelLabel(session.model));
     this.thinkingButton.setText(session.thinkingLevel === undefined ? "thinking…" : `thinking: ${session.thinkingLevel}`);
 
     // Prompts may be typed while pi starts (they queue on stdin); pickers

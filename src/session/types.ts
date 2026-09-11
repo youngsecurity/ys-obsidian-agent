@@ -73,6 +73,8 @@ export interface ModelInfo {
   readonly provider: string;
   readonly id: string;
   readonly name: string;
+  /** Backend-provided details, often including the version behind an alias. */
+  readonly description?: string;
   readonly reasoning: boolean;
 }
 

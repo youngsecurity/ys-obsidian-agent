@@ -263,9 +263,14 @@ const EMPTY_CONFIG: AcpSessionConfig = {
   currentThinkingLevel: undefined,
 };
 
-function selectValues(options: unknown): { value: string; name: string }[] {
+function modelDescription(entry: Record<string, unknown>): { description?: string } {
+  const description = asString(entry["description"])?.trim();
+  return description ? { description } : {};
+}
+
+function selectValues(options: unknown): { value: string; name: string; description?: string }[] {
   if (!Array.isArray(options)) return [];
-  const out: { value: string; name: string }[] = [];
+  const out: { value: string; name: string; description?: string }[] = [];
   for (const entry of options) {
     if (!isRecord(entry)) continue;
     if (Array.isArray(entry["options"])) {
@@ -274,7 +279,7 @@ function selectValues(options: unknown): { value: string; name: string }[] {
     }
     const value = asString(entry["value"]);
     if (value === undefined) continue;
-    out.push({ value, name: asString(entry["name"]) ?? value });
+    out.push({ value, name: asString(entry["name"]) ?? value, ...modelDescription(entry) });
   }
   return out;
 }
@@ -304,6 +309,7 @@ export function parseSessionConfig(response: unknown, provider: string): AcpSess
             provider,
             id: entry.value,
             name: entry.name,
+            ...(entry.description === undefined ? {} : { description: entry.description }),
             reasoning: false,
           })),
           currentModelId: current,
@@ -329,7 +335,7 @@ export function parseSessionConfig(response: unknown, provider: string): AcpSess
         if (!isRecord(entry)) continue;
         const id = asString(entry["modelId"]);
         if (id === undefined) continue;
-        available.push({ provider, id, name: asString(entry["name"]) ?? id, reasoning: false });
+        available.push({ provider, id, name: asString(entry["name"]) ?? id, ...modelDescription(entry), reasoning: false });
       }
       if (available.length > 0) {
         config = {

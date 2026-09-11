@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 };
 
 /** Full thinking scale; each backend narrows to what its model supports. */
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
 
 function stringField(raw: Record<string, unknown>, key: keyof BackendSettings): string {
   const value = raw[key];

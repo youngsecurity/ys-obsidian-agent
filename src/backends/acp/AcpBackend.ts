@@ -35,6 +35,8 @@ export interface AcpBackendOptions extends BackendLaunchArgs {
   readonly backendId: string;
   /** Extra CLI args for the adapter (tests, settings). */
   readonly extraArgs?: readonly string[];
+  /** Adapter-specific child environment. Defaults to the inherited environment. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 interface PendingPermission {
@@ -91,7 +93,7 @@ export class AcpBackendProcess implements BackendProcess {
       cwd: options.vaultRootAbs,
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
+      env: options.env ?? process.env,
     });
     this.child.stderr.on("data", (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4000);

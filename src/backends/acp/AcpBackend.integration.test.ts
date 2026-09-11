@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { SessionEvent } from "../../session/types";
 import { detectExecutable, executableNames } from "../shared/detectExecutable";
 import { AcpBackendProcess } from "./AcpBackend";
+import { claudeCodeBackendDescriptor } from "./index";
 
 const adapterPath = detectExecutable(executableNames("claude-code-acp"));
 const describeIfAdapter = adapterPath === null ? describe.skip : describe;
@@ -74,6 +75,34 @@ describeIfAdapter("AcpBackendProcess (integration, claude-code-acp)", () => {
     }
     expect(backend.state).toBe("exited");
   }, 60_000);
+
+  // Opt in on a machine with a current Claude CLI and Fable access. No model
+  // prompt is sent: this checks the production descriptor, listing, and selection.
+  test.skipIf(process.env["YS_TEST_CLAUDE_RUNTIME"] !== "1")(
+    "installed runtime advertises Fable 5.1 and accepts its unchanged model id",
+    async () => {
+      const events: SessionEvent[] = [];
+      const backend = claudeCodeBackendDescriptor.createBackendProcess({ vaultRootAbs: workDir });
+      backend.subscribe((event) => events.push(event));
+      try {
+        await waitFor(events, (e) => ready(e) || (e.kind === "state_change" && e.state === "error"));
+        expect(backend.state).toBe("ready");
+        const models = await backend.listModels();
+        const fable = models.find((model) => model.id === "fable[1m]");
+        expect(fable?.description).toContain("Fable 5.1");
+        if (fable === undefined) throw new Error("Fable was not advertised");
+        const other = models.find((model) => model.id !== fable.id);
+        if (other === undefined) throw new Error("No alternate model to switch from");
+        await backend.setModel(other);
+        await backend.setModel(fable);
+        const lastInfo = [...events].reverse().find((e) => e.kind === "session_info");
+        expect(lastInfo?.kind === "session_info" ? lastInfo.model : undefined).toEqual(fable);
+      } finally {
+        await backend.dispose();
+      }
+    },
+    60_000
+  );
 
   test.skipIf(!runPrompts)(
     "prompt streams text and a tool call, then resume replays the history",

@@ -1,6 +1,8 @@
 import type { BackendDescriptor, BackendLaunchArgs, BackendProcess } from "../../session/types";
 import { detectExecutable, executableNames } from "../shared/detectExecutable";
 import { AcpBackendProcess } from "./AcpBackend";
+import { claudeCodeEnvironment } from "./claudeRuntime";
+import { codexEnvironment } from "./codexEnvironment";
 
 interface AcpAgentSpec {
   readonly id: string;
@@ -8,6 +10,7 @@ interface AcpAgentSpec {
   /** Bare executable name of the ACP adapter. */
   readonly executable: string;
   readonly installHint: string;
+  readonly environment?: () => NodeJS.ProcessEnv;
 }
 
 function createAcpDescriptor(spec: AcpAgentSpec): BackendDescriptor {
@@ -28,7 +31,7 @@ function createAcpDescriptor(spec: AcpAgentSpec): BackendDescriptor {
             : `Could not find ${spec.executable}. ${spec.installHint}`
         );
       }
-      return new AcpBackendProcess({ ...args, executablePath, backendId: spec.id });
+      return new AcpBackendProcess({ ...args, executablePath, backendId: spec.id, env: spec.environment?.() });
     },
   };
 }
@@ -38,15 +41,17 @@ export const claudeCodeBackendDescriptor: BackendDescriptor = createAcpDescripto
   id: "claude-code",
   displayName: "Claude Code",
   executable: "claude-code-acp",
+  environment: claudeCodeEnvironment,
   installHint:
     "Install it (bun add -g @zed-industries/claude-code-acp), make sure Claude Code is logged in (claude /login), or set the executable path in settings.",
 });
 
-/** Codex via Zed's ACP adapter. */
+/** Codex via the maintained ACP adapter over Codex App Server. */
 export const codexBackendDescriptor: BackendDescriptor = createAcpDescriptor({
   id: "codex",
   displayName: "Codex",
   executable: "codex-acp",
+  environment: codexEnvironment,
   installHint:
-    "Install it (bun add -g @zed-industries/codex-acp), make sure Codex is logged in (codex login), or set the executable path in settings.",
+    "Install it (bun add -g @agentclientprotocol/codex-acp), make sure Codex is logged in (codex login), or set the executable path in settings.",
 });
