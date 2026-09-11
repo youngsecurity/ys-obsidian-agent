@@ -1,6 +1,7 @@
 import type {
   BackendProcess,
   BackendState,
+  ModelInfo,
   PromptInput,
   SessionEvent,
   ToolArgs,
@@ -49,6 +50,8 @@ export class AgentSession {
   private items: TranscriptItem[] = [];
   private stateDetail: string | undefined;
   private handle: string | undefined;
+  private currentModel: ModelInfo | undefined;
+  private currentThinkingLevel: string | undefined;
   private queued = 0;
 
   constructor(backend: BackendProcess) {
@@ -78,6 +81,30 @@ export class AgentSession {
   /** Steer and follow-up messages the backend has not delivered yet. */
   get queuedCount(): number {
     return this.queued;
+  }
+
+  get model(): ModelInfo | undefined {
+    return this.currentModel;
+  }
+
+  get thinkingLevel(): string | undefined {
+    return this.currentThinkingLevel;
+  }
+
+  listModels(): Promise<readonly ModelInfo[]> {
+    return this.backend.listModels();
+  }
+
+  setModel(model: ModelInfo): Promise<void> {
+    return this.backend.setModel(model);
+  }
+
+  listThinkingLevels(): Promise<readonly string[]> {
+    return this.backend.listThinkingLevels();
+  }
+
+  setThinkingLevel(level: string): Promise<void> {
+    return this.backend.setThinkingLevel(level);
   }
 
   onChange(listener: SessionChangeListener): Unsubscribe {
@@ -129,6 +156,8 @@ export class AgentSession {
         break;
       case "session_info":
         this.handle = event.resumeHandle;
+        this.currentModel = event.model;
+        this.currentThinkingLevel = event.thinkingLevel;
         break;
       case "session_reset":
         this.items = [];

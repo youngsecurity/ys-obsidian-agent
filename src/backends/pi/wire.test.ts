@@ -1,6 +1,37 @@
 import { describe, expect, test } from "bun:test";
 
-import { parsePiWireEvent } from "./wire";
+import { parseModel, parsePiWireEvent, parseSessionState } from "./wire";
+
+describe("parseSessionState", () => {
+  test("extracts session file, model, and thinking level", () => {
+    expect(
+      parseSessionState({
+        sessionFile: "/s.jsonl",
+        thinkingLevel: "high",
+        model: { id: "m1", name: "Model One", provider: "anthropic", reasoning: true, extra: 1 },
+      })
+    ).toEqual({
+      sessionFile: "/s.jsonl",
+      thinkingLevel: "high",
+      model: { provider: "anthropic", id: "m1", name: "Model One", reasoning: true },
+    });
+  });
+
+  test("tolerates a null model and missing fields", () => {
+    expect(parseSessionState({ model: null })).toEqual({
+      sessionFile: undefined,
+      model: undefined,
+      thinkingLevel: undefined,
+    });
+    expect(parseModel({ id: "x" })).toBeUndefined();
+    expect(parseModel({ id: "x", provider: "p" })).toEqual({
+      provider: "p",
+      id: "x",
+      name: "x",
+      reasoning: false,
+    });
+  });
+});
 
 describe("parsePiWireEvent", () => {
   test("parses text deltas from message_update", () => {

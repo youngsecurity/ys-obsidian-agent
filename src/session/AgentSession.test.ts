@@ -4,6 +4,7 @@ import { AgentSession } from "./AgentSession";
 import type {
   BackendProcess,
   BackendState,
+  ModelInfo,
   PromptInput,
   SessionEvent,
   SessionEventListener,
@@ -46,7 +47,24 @@ class FakeBackend implements BackendProcess {
   async newSession(): Promise<void> {
     this.calls.push("newSession");
     this.emit({ kind: "session_reset" });
-    this.emit({ kind: "session_info", resumeHandle: "fresh" });
+    this.emit({ kind: "session_info", resumeHandle: "fresh", model: undefined, thinkingLevel: undefined });
+  }
+
+  async listModels(): Promise<readonly ModelInfo[]> {
+    return [{ provider: "p", id: "m", name: "M", reasoning: true }];
+  }
+
+  async setModel(model: ModelInfo): Promise<void> {
+    this.calls.push(`setModel:${model.provider}/${model.id}`);
+    this.emit({ kind: "session_info", resumeHandle: "h", model, thinkingLevel: "low" });
+  }
+
+  async listThinkingLevels(): Promise<readonly string[]> {
+    return ["off", "low"];
+  }
+
+  async setThinkingLevel(level: string): Promise<void> {
+    this.calls.push(`setThinkingLevel:${level}`);
   }
 
   respondUi(_response: UiResponse): void {}
@@ -103,7 +121,7 @@ describe("AgentSession", () => {
   test("replayed history lands in the transcript like live events", () => {
     const backend = new FakeBackend();
     const session = new AgentSession(backend);
-    backend.emit({ kind: "session_info", resumeHandle: "/tmp/s.jsonl" });
+    backend.emit({ kind: "session_info", resumeHandle: "/tmp/s.jsonl", model: undefined, thinkingLevel: undefined });
     backend.emit({ kind: "user_message", text: "hi" });
     backend.emit({ kind: "assistant_message_start" });
     backend.emit({ kind: "text_delta", delta: "hello" });
@@ -119,12 +137,25 @@ describe("AgentSession", () => {
   test("new session clears the transcript and updates the handle", async () => {
     const backend = new FakeBackend();
     const session = new AgentSession(backend);
-    backend.emit({ kind: "session_info", resumeHandle: "old" });
+    backend.emit({ kind: "session_info", resumeHandle: "old", model: undefined, thinkingLevel: undefined });
     backend.emit({ kind: "user_message", text: "hi" });
     await session.newSession();
     expect(backend.calls).toEqual(["newSession"]);
     expect(session.transcript).toEqual([]);
     expect(session.resumeHandle).toBe("fresh");
+  });
+
+  test("tracks model and thinking level from session_info", async () => {
+    const backend = new FakeBackend();
+    const session = new AgentSession(backend);
+    expect(session.model).toBeUndefined();
+    const [model] = await session.listModels();
+    if (model === undefined) throw new Error("fake backend returned no models");
+    await session.setModel(model);
+    await session.setThinkingLevel("low");
+    expect(session.model).toEqual(model);
+    expect(session.thinkingLevel).toBe("low");
+    expect(backend.calls).toEqual(["setModel:p/m", "setThinkingLevel:low"]);
   });
 
   test("tracks queued steer and follow-up counts", () => {

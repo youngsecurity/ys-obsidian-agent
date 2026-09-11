@@ -5,6 +5,7 @@
  * Unrecognized event types parse to `null` and are ignored, keeping the
  * backend forward-compatible with newer pi releases.
  */
+import type { ModelInfo } from "../../session/types";
 
 export type PiWireEvent =
   | { readonly type: "agent_start" }
@@ -49,8 +50,36 @@ export function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function stringArray(value: unknown): string[] {
+export function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** Parse a pi `Model` object into the session-domain {@link ModelInfo}. */
+export function parseModel(value: unknown): ModelInfo | undefined {
+  if (!isRecord(value)) return undefined;
+  const provider = asString(value["provider"]);
+  const id = asString(value["id"]);
+  if (provider === undefined || id === undefined) return undefined;
+  return {
+    provider,
+    id,
+    name: asString(value["name"]) ?? id,
+    reasoning: value["reasoning"] === true,
+  };
+}
+
+/** Session identity and model setup from a `get_state` payload. */
+export function parseSessionState(data: unknown): {
+  readonly sessionFile: string | undefined;
+  readonly model: ModelInfo | undefined;
+  readonly thinkingLevel: string | undefined;
+} {
+  if (!isRecord(data)) return { sessionFile: undefined, model: undefined, thinkingLevel: undefined };
+  return {
+    sessionFile: asString(data["sessionFile"]),
+    model: parseModel(data["model"]),
+    thinkingLevel: asString(data["thinkingLevel"]),
+  };
 }
 
 /** Concatenated text blocks from a pi content array (tool output). */

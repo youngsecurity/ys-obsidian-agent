@@ -68,6 +68,19 @@ export type UiResponse =
 /** Tool-call arguments as the backend reported them (JSON object). */
 export type ToolArgs = Readonly<Record<string, unknown>>;
 
+/** A model the backend can run. `provider/id` is the stable selector. */
+export interface ModelInfo {
+  readonly provider: string;
+  readonly id: string;
+  readonly name: string;
+  readonly reasoning: boolean;
+}
+
+/** `provider/id` string used in settings and CLI flags. */
+export function modelKey(model: Pick<ModelInfo, "provider" | "id">): string {
+  return `${model.provider}/${model.id}`;
+}
+
 /**
  * The domain vocabulary the UI renders. Each backend translates its native
  * wire format into these events at its own boundary.
@@ -80,11 +93,16 @@ export type ToolArgs = Readonly<Record<string, unknown>>;
 export type SessionEvent =
   | { readonly kind: "state_change"; readonly state: BackendState; readonly detail?: string }
   /**
-   * The backend learned (or changed) its persistence identity. The handle is
-   * opaque to everything outside the backend; pass it back via
-   * {@link BackendLaunchArgs.resumeHandle} to resume later.
+   * The backend learned (or changed) its session identity and model setup.
+   * The handle is opaque to everything outside the backend; pass it back
+   * via {@link BackendLaunchArgs.resumeHandle} to resume later.
    */
-  | { readonly kind: "session_info"; readonly resumeHandle: string | undefined }
+  | {
+      readonly kind: "session_info";
+      readonly resumeHandle: string | undefined;
+      readonly model: ModelInfo | undefined;
+      readonly thinkingLevel: string | undefined;
+    }
   /** The backend discarded its transcript (new session). */
   | { readonly kind: "session_reset" }
   /** A user message that the session did not originate (history replay). */
@@ -137,6 +155,14 @@ export interface BackendProcess {
   abort(): Promise<void>;
   /** Discard the transcript and start a fresh persisted session. */
   newSession(): Promise<void>;
+  /** Models available to switch to. Empty when the backend cannot switch. */
+  listModels(): Promise<readonly ModelInfo[]>;
+  /** Switch model; the backend follows with a `session_info` event. */
+  setModel(model: ModelInfo): Promise<void>;
+  /** Thinking levels the current model supports. Empty when unsupported. */
+  listThinkingLevels(): Promise<readonly string[]>;
+  /** Set the thinking level; the backend follows with a `session_info` event. */
+  setThinkingLevel(level: string): Promise<void>;
   /** Answer a dialog {@link UiRequest}. */
   respondUi(response: UiResponse): void;
   /** Kill the subprocess tree and release resources. Idempotent. */
@@ -152,13 +178,23 @@ export interface BackendLaunchArgs {
    * unknown handle degrades to a fresh session.
    */
   readonly resumeHandle?: string;
+  /** User-configured executable; empty or absent means auto-detect. */
+  readonly executablePath?: string;
+  /** Default model selector (`provider/id` or a backend-specific pattern). */
+  readonly model?: string;
+  /** Default thinking level; absent means the backend's own default. */
+  readonly thinkingLevel?: string;
 }
 
 /** One entry in the backend registry. */
 export interface BackendDescriptor {
   readonly id: string;
   readonly displayName: string;
-  /** Probe whether this backend can run on this machine. */
-  isAvailable(): Promise<boolean>;
+  /**
+   * Absolute path of a runnable executable, honoring the override when set,
+   * or `null` when none can be found. Used by settings to show detection
+   * status and by launch to fail early with a clear message.
+   */
+  resolveExecutable(override?: string): string | null;
   createBackendProcess(args: BackendLaunchArgs): BackendProcess;
 }

@@ -42,8 +42,53 @@
   cursor: default;
 }
 
+.ys-agent-picker {
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui-smaller);
+}
+
 .ys-agent-view .is-hidden {
   display: none;
+}
+
+.ys-agent-banner {
+  flex-shrink: 0;
+  margin: 0 var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-s);
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.ys-agent-banner-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--font-ui-small);
+}
+
+.ys-agent-banner-actions {
+  display: flex;
+  gap: var(--size-4-2);
+}
+
+.ys-agent-detection {
+  margin: var(--size-4-1) 0 var(--size-4-4);
+  word-break: break-all;
+}
+
+.ys-agent-detection.is-error {
+  color: var(--text-error);
+}
+
+.ys-agent-setting-wide {
+  width: 24em;
+  max-width: 100%;
 }
 
 .ys-agent-transcript {

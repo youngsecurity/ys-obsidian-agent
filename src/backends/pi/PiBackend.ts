@@ -5,6 +5,7 @@ import type {
   BackendLaunchArgs,
   BackendProcess,
   BackendState,
+  ModelInfo,
   PromptInput,
   SessionEvent,
   SessionEventListener,
@@ -14,7 +15,15 @@ import type {
 } from "../../session/types";
 import { translateHistory } from "./history";
 import { JsonlSplitter } from "./jsonl";
-import { asString, isRecord, parsePiWireEvent, type PiWireEvent } from "./wire";
+import {
+  asString,
+  isRecord,
+  parseModel,
+  parsePiWireEvent,
+  parseSessionState,
+  type PiWireEvent,
+  stringArray,
+} from "./wire";
 
 const KILL_GRACE_MS = 1500;
 
@@ -25,11 +34,6 @@ export interface PiBackendOptions extends BackendLaunchArgs {
 }
 
 type PiResponse = Extract<PiWireEvent, { type: "response" }>;
-
-/** `sessionFile` from a `get_state` payload, the pi resume handle. */
-function sessionFileOf(data: unknown): string | undefined {
-  return isRecord(data) ? asString(data["sessionFile"]) : undefined;
-}
 
 /**
  * Translate a raw `extension_ui_request` record into the session-domain
@@ -100,6 +104,10 @@ export class PiBackendProcess implements BackendProcess {
   constructor(options: PiBackendOptions) {
     const args = ["--mode", "rpc", ...(options.extraArgs ?? [])];
     if (options.resumeHandle !== undefined) args.push("--session", options.resumeHandle);
+    if (options.model !== undefined && options.model.length > 0) args.push("--model", options.model);
+    if (options.thinkingLevel !== undefined && options.thinkingLevel.length > 0) {
+      args.push("--thinking", options.thinkingLevel);
+    }
     this.child = spawn(options.executablePath, args, {
       cwd: options.vaultRootAbs,
       detached: process.platform !== "win32",
@@ -161,7 +169,7 @@ export class PiBackendProcess implements BackendProcess {
         }
         return;
       }
-      this.emit({ kind: "session_info", resumeHandle: sessionFileOf(state.data) });
+      this.emitSessionInfo(state.data);
       if (resuming) await this.replayHistory();
       if (this.currentState === "starting") this.setState("ready");
     } catch (error) {
@@ -232,10 +240,59 @@ export class PiBackendProcess implements BackendProcess {
       throw new Error("An extension cancelled the new session");
     }
     this.emit({ kind: "session_reset" });
+    await this.refreshSessionInfo();
+  }
+
+  async listModels(): Promise<readonly ModelInfo[]> {
+    this.assertWritable();
+    const response = await this.request({ type: "get_available_models" });
+    if (!response.success) throw new Error(response.error ?? "Could not list models");
+    const raw = isRecord(response.data) ? response.data["models"] : undefined;
+    if (!Array.isArray(raw)) return [];
+    return raw.map(parseModel).filter((model): model is ModelInfo => model !== undefined);
+  }
+
+  /**
+   * Pi has no model-changed event and answers `get_state` out of order
+   * while a slow `set_model` is in flight, so refresh only after it resolves.
+   */
+  async setModel(model: ModelInfo): Promise<void> {
+    this.assertWritable();
+    const response = await this.request({
+      type: "set_model",
+      provider: model.provider,
+      modelId: model.id,
+    });
+    if (!response.success) throw new Error(response.error ?? "Could not switch model");
+    await this.refreshSessionInfo();
+  }
+
+  async listThinkingLevels(): Promise<readonly string[]> {
+    this.assertWritable();
+    const response = await this.request({ type: "get_available_thinking_levels" });
+    if (!response.success) throw new Error(response.error ?? "Could not list thinking levels");
+    return stringArray(isRecord(response.data) ? response.data["levels"] : undefined);
+  }
+
+  async setThinkingLevel(level: string): Promise<void> {
+    this.assertWritable();
+    const response = await this.request({ type: "set_thinking_level", level });
+    if (!response.success) throw new Error(response.error ?? "Could not set thinking level");
+    await this.refreshSessionInfo();
+  }
+
+  private async refreshSessionInfo(): Promise<void> {
     const state = await this.request({ type: "get_state" });
+    this.emitSessionInfo(state.success ? state.data : undefined);
+  }
+
+  private emitSessionInfo(stateData: unknown): void {
+    const state = parseSessionState(stateData);
     this.emit({
       kind: "session_info",
-      resumeHandle: state.success ? sessionFileOf(state.data) : undefined,
+      resumeHandle: state.sessionFile,
+      model: state.model,
+      thinkingLevel: state.thinkingLevel,
     });
   }
 

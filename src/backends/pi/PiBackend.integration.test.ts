@@ -148,4 +148,45 @@ describeIfPi("PiBackendProcess (integration)", () => {
     const info = events.find((e) => e.kind === "session_info");
     expect(info !== undefined && info.kind === "session_info" ? info.resumeHandle : undefined).toBe(fixturePath);
   });
+
+  test("launch flags select model and thinking; pickers switch them live", async () => {
+    const events: SessionEvent[] = [];
+    const backend = new PiBackendProcess({
+      executablePath: piPath ?? "pi",
+      vaultRootAbs: workDir,
+      thinkingLevel: "low",
+      extraArgs: ["--no-extensions", "--no-skills", "--no-session"],
+    });
+    backend.subscribe((event) => events.push(event));
+    try {
+      await waitFor(events, (e) => e.kind === "state_change" && e.state === "ready");
+      const first = events.find((e) => e.kind === "session_info");
+      if (first === undefined || first.kind !== "session_info") throw new Error("no session_info");
+      expect(first.thinkingLevel).toBe("low");
+      expect(first.model).toBeDefined();
+
+      const models = await backend.listModels();
+      expect(models.length).toBeGreaterThan(0);
+      const other = models.find((m) => first.model !== undefined && m.id !== first.model.id);
+      if (other === undefined) throw new Error("need at least two models to test switching");
+      await backend.setModel(other);
+      const afterModel = events[events.length - 1];
+      expect(afterModel?.kind).toBe("session_info");
+      if (afterModel?.kind === "session_info") {
+        expect(afterModel.model?.id).toBe(other.id);
+        expect(afterModel.model?.provider).toBe(other.provider);
+      }
+
+      const levels = await backend.listThinkingLevels();
+      expect(levels.length).toBeGreaterThan(0);
+      const level = levels.find((l) => l !== "low") ?? levels[0];
+      if (level === undefined) throw new Error("no thinking levels");
+      await backend.setThinkingLevel(level);
+      const afterLevel = events[events.length - 1];
+      if (afterLevel?.kind === "session_info") expect(afterLevel.thinkingLevel).toBe(level);
+      else throw new Error(`expected session_info, got ${String(afterLevel?.kind)}`);
+    } finally {
+      await backend.dispose();
+    }
+  });
 });
