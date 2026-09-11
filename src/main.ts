@@ -1,10 +1,16 @@
 import { FileSystemAdapter, Notice, Platform, Plugin } from "obsidian";
 
-import { getBackendDescriptor, DEFAULT_BACKEND_ID } from "./backends/registry";
+import { BACKENDS, getBackendDescriptor, DEFAULT_BACKEND_ID } from "./backends/registry";
 import { AgentSession } from "./session/AgentSession";
 import { type BackendDescriptor, type ModelInfo, modelKey } from "./session/types";
 import { AgentSettingsTab } from "./settings/SettingsTab";
-import { DEFAULT_SETTINGS, parseSettings, type PluginSettings } from "./settings/settings";
+import {
+  backendSettings,
+  DEFAULT_SETTINGS,
+  parseSettings,
+  type PluginSettings,
+  withBackendSettings,
+} from "./settings/settings";
 import { AGENT_VIEW_TYPE, AgentView } from "./ui/AgentView";
 
 /** Persisted plugin data. Resume handles are opaque and keyed by backend id. */
@@ -62,6 +68,10 @@ function openPluginSettings(app: unknown, pluginId: string): boolean {
  * Settings (milestone 4): executable path, default model, and thinking
  * level are passed as launch args. Picks made in the pane are written back
  * as the new defaults.
+ *
+ * Backend picker (milestone 5): settings name the backend id; every launch
+ * goes through the registry descriptor for that id, and settings, resume
+ * handles, and pane picks are all keyed by backend id.
  */
 export default class YsObsidianAgentPlugin extends Plugin {
   private session: AgentSession | undefined;
@@ -74,7 +84,6 @@ export default class YsObsidianAgentPlugin extends Plugin {
     }
 
     this.data = parsePluginData(await this.loadData());
-    const backend = this.backendDescriptor();
 
     this.registerView(
       AGENT_VIEW_TYPE,
@@ -92,7 +101,7 @@ export default class YsObsidianAgentPlugin extends Plugin {
     this.addSettingTab(
       new AgentSettingsTab(this.app, this, {
         getSettings: () => this.data.settings,
-        backend,
+        backends: BACKENDS,
         saveSettings: (next) => this.saveSettings(next),
       })
     );
@@ -124,10 +133,12 @@ export default class YsObsidianAgentPlugin extends Plugin {
     void this.releaseSession();
   }
 
+  /** The configured backend, falling back to the default when unknown. */
   private backendDescriptor(): BackendDescriptor {
-    const descriptor = getBackendDescriptor(DEFAULT_BACKEND_ID);
+    const descriptor =
+      getBackendDescriptor(this.data.settings.backendId) ?? getBackendDescriptor(DEFAULT_BACKEND_ID);
     if (descriptor === undefined) {
-      throw new Error(`Unknown backend: ${DEFAULT_BACKEND_ID}`);
+      throw new Error(`Unknown backend: ${this.data.settings.backendId}`);
     }
     return descriptor;
   }
@@ -135,7 +146,7 @@ export default class YsObsidianAgentPlugin extends Plugin {
   private acquireSession(): AgentSession {
     if (this.session !== undefined) return this.session;
     const descriptor = this.backendDescriptor();
-    const settings = this.data.settings;
+    const settings = backendSettings(this.data.settings, descriptor.id);
     const resumeHandle = this.data.resumeHandles[descriptor.id];
     const backend = descriptor.createBackendProcess({
       vaultRootAbs: this.vaultRootAbs(),
@@ -144,7 +155,7 @@ export default class YsObsidianAgentPlugin extends Plugin {
       model: settings.model,
       thinkingLevel: settings.thinkingLevel,
     });
-    const session = new AgentSession(backend);
+    const session = new AgentSession(backend, descriptor.displayName);
     session.onChange(() => {
       void this.rememberResumeHandle(descriptor.id, session.resumeHandle);
     });
@@ -176,11 +187,15 @@ export default class YsObsidianAgentPlugin extends Plugin {
   }
 
   private rememberModel(model: ModelInfo): Promise<void> {
-    return this.saveSettings({ ...this.data.settings, model: modelKey(model) });
+    const id = this.backendDescriptor().id;
+    const current = backendSettings(this.data.settings, id);
+    return this.saveSettings(withBackendSettings(this.data.settings, id, { ...current, model: modelKey(model) }));
   }
 
   private rememberThinkingLevel(level: string): Promise<void> {
-    return this.saveSettings({ ...this.data.settings, thinkingLevel: level });
+    const id = this.backendDescriptor().id;
+    const current = backendSettings(this.data.settings, id);
+    return this.saveSettings(withBackendSettings(this.data.settings, id, { ...current, thinkingLevel: level }));
   }
 
   private openSettings(): void {

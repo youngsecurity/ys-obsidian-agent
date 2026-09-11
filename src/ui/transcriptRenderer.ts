@@ -1,6 +1,7 @@
 import { type App, type Component, MarkdownRenderer } from "obsidian";
 
 import type { TranscriptItem } from "../session/AgentSession";
+import type { ToolArgs } from "../session/types";
 import { clampOutput, summarizeArgs } from "./toolSummary";
 
 type ItemOf<K extends TranscriptItem["kind"]> = Extract<TranscriptItem, { kind: K }>;
@@ -89,28 +90,26 @@ class AssistantCell implements Cell<"assistant"> {
 class ToolCell implements Cell<"tool"> {
   readonly kind = "tool";
   readonly el: HTMLDetailsElement;
+  private readonly nameEl: HTMLElement;
+  private readonly argSummaryEl: HTMLElement;
   private readonly statusEl: HTMLElement;
+  private readonly argsLabelEl: HTMLElement;
+  private readonly argsEl: HTMLElement;
   private readonly outputEl: HTMLElement;
   private lastOutput: string | undefined;
+  private lastArgs: ToolArgs | undefined;
+  private lastName: string | undefined;
 
   constructor(item: ItemOf<"tool">) {
     this.el = createEl("details", { cls: "ys-agent-cell ys-agent-tool" });
     const summary = this.el.createEl("summary", { cls: "ys-agent-tool-summary" });
-    summary.createSpan({ cls: "ys-agent-tool-name", text: item.toolName });
-    const argSummary = summarizeArgs(item.args);
-    if (argSummary.length > 0) {
-      summary.createSpan({ cls: "ys-agent-tool-args-summary", text: argSummary });
-    }
+    this.nameEl = summary.createSpan({ cls: "ys-agent-tool-name" });
+    this.argSummaryEl = summary.createSpan({ cls: "ys-agent-tool-args-summary" });
     this.statusEl = summary.createSpan({ cls: "ys-agent-tool-status" });
 
     const body = this.el.createDiv({ cls: "ys-agent-tool-body" });
-    if (Object.keys(item.args).length > 0) {
-      body.createDiv({ cls: "ys-agent-tool-label", text: "Arguments" });
-      body.createEl("pre", {
-        cls: "ys-agent-tool-args",
-        text: JSON.stringify(item.args, null, 2),
-      });
-    }
+    this.argsLabelEl = body.createDiv({ cls: "ys-agent-tool-label", text: "Arguments" });
+    this.argsEl = body.createEl("pre", { cls: "ys-agent-tool-args" });
     body.createDiv({ cls: "ys-agent-tool-label", text: "Output" });
     this.outputEl = body.createEl("pre", { cls: "ys-agent-tool-output" });
     this.update(item);
@@ -121,6 +120,18 @@ class ToolCell implements Cell<"tool"> {
     this.el.toggleClass("is-error", item.done && item.isError);
     this.el.toggleClass("is-done", item.done && !item.isError);
     this.statusEl.setText(item.done ? (item.isError ? "failed" : "done") : "running…");
+    if (item.toolName !== this.lastName) {
+      this.lastName = item.toolName;
+      this.nameEl.setText(item.toolName);
+    }
+    if (item.args !== this.lastArgs) {
+      this.lastArgs = item.args;
+      const hasArgs = Object.keys(item.args).length > 0;
+      this.argSummaryEl.setText(summarizeArgs(item.args));
+      this.argsLabelEl.toggleClass("is-hidden", !hasArgs);
+      this.argsEl.toggleClass("is-hidden", !hasArgs);
+      if (hasArgs) this.argsEl.setText(JSON.stringify(item.args, null, 2));
+    }
     if (item.output !== this.lastOutput) {
       this.lastOutput = item.output;
       this.outputEl.setText(item.output.length === 0 ? "(no output)" : clampOutput(item.output));

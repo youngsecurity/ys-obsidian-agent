@@ -13,6 +13,13 @@ describe("summarizeArgs", () => {
     expect(summarizeArgs({ count: 3 })).toBe("");
   });
 
+  test("joins command arrays and skips identifier keys (codex-style input)", () => {
+    expect(
+      summarizeArgs({ call_id: "call_1", turn_id: "t", command: ["/bin/bash", "-lc", "ls"], cwd: "/v" })
+    ).toBe("/bin/bash -lc ls");
+    expect(summarizeArgs({ call_id: "call_1", changes: {} })).toBe("");
+  });
+
   test("truncates long summaries", () => {
     const summary = summarizeArgs({ command: "x".repeat(300) });
     expect(summary.length).toBe(100);

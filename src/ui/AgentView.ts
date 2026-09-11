@@ -24,7 +24,7 @@ export interface AgentViewHost {
 
 const IDLE_PLACEHOLDER = "Prompt the agent (Enter to send, Shift+Enter for newline)";
 const STREAMING_PLACEHOLDER = "Steer the agent (Enter to queue, Esc to stop)";
-const TRANSCRIPT_PLACEHOLDER = "Send a prompt to start. The agent runs pi in this vault.";
+const TRANSCRIPT_PLACEHOLDER = "Send a prompt to start. The agent runs in this vault.";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -174,7 +174,7 @@ export class AgentView extends ItemView {
   /** No session could be created (typically: executable not found). */
   private showStartupFailure(message: string): void {
     this.transcriptEl.empty();
-    this.statusTextEl.setText("pi: not started");
+    this.statusTextEl.setText("agent: not started");
     this.setControlsEnabled(false);
     this.showBanner(message, [
       { label: "Retry", primary: true, onClick: () => this.startSession() },
@@ -186,7 +186,7 @@ export class AgentView extends ItemView {
     if (this.restarting) return;
     this.restarting = true;
     this.unbindSession();
-    this.showBanner("Restarting pi…", []);
+    this.showBanner("Restarting the agent…", []);
     try {
       this.bindSession(await this.host.restartSession());
     } catch (error) {
@@ -360,7 +360,7 @@ export class AgentView extends ItemView {
     const streaming = state === "streaming";
     const down = state === "error" || state === "exited";
 
-    const parts = [`pi: ${state}`];
+    const parts = [`${session.backendName}: ${state}`];
     if (session.queuedCount > 0) parts.push(`· ${String(session.queuedCount)} queued`);
     this.statusTextEl.setText(parts.join(" "));
     this.modelButton.setText(session.model?.name ?? "model…");
@@ -375,7 +375,9 @@ export class AgentView extends ItemView {
     this.newSessionButton.toggleAttribute("disabled", down || streaming || state === "starting");
 
     if (down) {
-      const message = session.detail ?? (state === "exited" ? "pi exited." : "pi failed.");
+      const message =
+        session.detail ??
+        (state === "exited" ? `${session.backendName} exited.` : `${session.backendName} failed.`);
       this.showBanner(message, [{ label: "Restart", primary: true, onClick: () => void this.restart() }]);
     } else if (!this.restarting) {
       this.hideBanner();

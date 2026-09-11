@@ -43,6 +43,8 @@ export type UiRequestListener = (request: UiRequest) => void;
  * detect changes per index by reference and update cells incrementally.
  */
 export class AgentSession {
+  /** Display name of the backend, for the status bar. */
+  readonly backendName: string;
   private readonly backend: BackendProcess;
   private readonly unsubscribeBackend: Unsubscribe;
   private readonly changeListeners = new Set<SessionChangeListener>();
@@ -54,8 +56,9 @@ export class AgentSession {
   private currentThinkingLevel: string | undefined;
   private queued = 0;
 
-  constructor(backend: BackendProcess) {
+  constructor(backend: BackendProcess, backendName = "agent") {
     this.backend = backend;
+    this.backendName = backendName;
     this.unsubscribeBackend = backend.subscribe((event) => {
       this.apply(event);
     });
@@ -198,7 +201,12 @@ export class AgentSession {
         });
         break;
       case "tool_update":
-        this.updateTool(event.toolCallId, (tool) => ({ ...tool, output: event.output }));
+        this.updateTool(event.toolCallId, (tool) => ({
+          ...tool,
+          output: event.output,
+          toolName: event.toolName ?? tool.toolName,
+          args: event.args ?? tool.args,
+        }));
         break;
       case "tool_end":
         this.updateTool(event.toolCallId, (tool) => ({

@@ -32,7 +32,7 @@ obsidian-copilot is AGPL-3.0. This repo is MIT. **Never copy, port, or mechanica
 
 **Phase 1: pi via RPC mode.** `pi --mode rpc` speaks strict JSONL over stdin/stdout: commands in (`prompt`, `steer`, `follow_up`, `abort`), responses and streamed events out. The pi package ships a subprocess TypeScript client (`src/modes/rpc/rpc-client.ts` in `@earendil-works/pi-coding-agent`), so the framing does not need to be rewritten. Delegating to pi means skills, extensions, AGENTS.md context, provider auth, and session persistence all come from the user's existing global setup for free. One deliberate exception: pi themes style pi's own TUI and do not carry over, because this plugin renders its own chat UI.
 
-**Phase 2: ACP-generic backend.** The Agent Client Protocol is the same shape: subprocess, JSON-RPC over stdio, streamed session updates. `@agentclientprotocol/sdk` handles the wire protocol. Claude Code (`claude-code-acp`), Codex (`codex-acp`), opencode, and Gemini CLI all speak it. Adding this later is a new `backends/acp/` implementation behind the same contract.
+**Phase 2: ACP-generic backend.** The Agent Client Protocol is the same shape: subprocess, JSON-RPC over stdio, streamed session updates. `@agentclientprotocol/sdk` handles the wire protocol. Delivered at milestone 5 for Claude Code (`@zed-industries/claude-code-acp`) and Codex (`@zed-industries/codex-acp`) as one `backends/acp/` implementation with a descriptor per agent. opencode and Gemini CLI are deferred; each is one more descriptor in `backends/registry.ts` once its adapter is verified. Adapters are installed by the user (`bun add -g ...`) and auto-detected like pi; the plugin bundles only the SDK.
 
 ## Architecture
 
@@ -45,9 +45,13 @@ src/
     types.ts              # BackendProcess, BackendDescriptor, SessionEvent, BackendState
     AgentSession.ts       # session state machine, event stream, persistence hooks
   backends/
+    shared/               # helpers with no wire types (executable detection)
     pi/                   # phase 1: spawn `pi --mode rpc` in vault root
       PiBackend.ts        # BackendProcess impl wrapping the pi RPC client
-      detectPi.ts         # executable discovery (see PATH gotcha)
+      wire.ts, history.ts # pi JSONL parsing and get_messages replay
+    acp/                  # phase 2: ACP adapters (Claude Code, Codex)
+      AcpBackend.ts       # BackendProcess impl over @agentclientprotocol/sdk
+      translate.ts        # session/update, permissions, model options
     registry.ts           # the only place that names every backend
   ui/                     # ItemView chat pane; reads session-domain types only
   settings/               # executable path, model/provider/thinking defaults
@@ -79,6 +83,7 @@ Rules:
 8. **Incremental transcript rendering.** Re-creating the transcript DOM on every delta resets `<details>` open state and scroll position. The UI keys cells by transcript index (items are immutable and only appended or replaced in place), reuses elements, and updates only changed cells. This kept plain DOM viable; no component framework was needed at milestone 3.
 9. **RPC responses are not ordered.** Pi answers commands as they complete, not in request order: a slow `set_model` lets a later `get_state` respond first with the old model. The pi backend correlates every command by id and only refreshes state after the mutating command's own response resolves. There is also no model-changed event (only `thinking_level_changed`), so the backend re-reads `get_state` after `set_model`, `set_thinking_level`, and `new_session`.
 10. **Executable override is strict.** A configured executable path is used exactly as given (after `~` expansion) and never falls back to auto-detection. A typo surfaces as a clear "not runnable" error in both the settings tab and the pane, instead of silently launching a different pi.
+11. **ACP differences absorbed in `backends/acp/`.** (a) No mid-turn steering: `steer`/`followUp` queue text and send it as the next prompt when the turn ends; `abort` clears the queue (pi now does the same via `clear_queue` before `abort`, so Stop behaves identically). (b) No message boundaries: the translator opens an assistant cell on the first chunk and closes it on a tool call, a user message, or turn end. (c) Resume is `session/load` with the session id as the handle; history replays through the same update stream, and user text arrives in chunks that are buffered into one message. (d) Model choice has two shapes: Codex exposes `configOptions` (categories `model`, `thought_level`) set via `session/set_config_option`; Claude Code exposes the older `models` field set via the unstable `session/set_model`. (e) Claude Code announces a tool call with a placeholder title ("Terminal") and sends the real title and input one update later, hence the optional `toolName`/`args` on `tool_update`. (f) Permission requests become `select` dialogs keyed by option name; dismissing answers `cancelled`, which the spec requires after a cancel. (g) `codex-acp` bundles its own Codex CLI, which can reject a newer default model from `~/.codex/config.toml`; pick a listed model in the pane or settings.
 
 ## Milestones
 
@@ -86,7 +91,7 @@ Rules:
 2. **Pi backend core.** Spawn `pi --mode rpc` in the vault root, send a prompt, render streamed text deltas in the pane. This is the demo-able core.
 3. **Trail rendering and control.** Tool calls and results in the transcript, thinking blocks, steer and interrupt, session resume across pane reopen. Delivered: collapsible tool cells (args, streamed output, status), collapsible thinking blocks that auto-open while thinking streams, Markdown rendering of completed assistant text, Enter steers while streaming, Stop button and Esc abort, queued-message count from `queue_update`, New session (button and command), and resume via the persisted backend handle (gotcha 7).
 4. **Settings and polish.** Pi executable path with auto-detect, model/provider/thinking level selection, error and crash UX. Delivered: settings tab (executable path with live detection status, default model as `provider/id`, default thinking level) applied as `--model`/`--thinking` launch flags; model and thinking pickers in the pane status bar backed by `get_available_models`/`get_available_thinking_levels`, with picks written back as the new defaults; crash banner with Restart (dispose and relaunch, resuming the persisted handle); startup-failure banner with Retry and Open settings. `BackendDescriptor.isAvailable()` became `resolveExecutable(override)` so settings and launch share one probe.
-5. **ACP backend.** `backends/acp/` using `@agentclientprotocol/sdk`, backend picker in settings, availability probing per agent.
+5. **ACP backend.** `backends/acp/` using `@agentclientprotocol/sdk`, backend picker in settings, availability probing per agent. Scoped to Claude Code and Codex; opencode and Gemini CLI deferred. Delivered: `AcpBackendProcess` over the SDK client connection with a pure translator (tested against captured adapter output) and a live integration test against `claude-code-acp` covering handshake, a tool-using prompt, and `session/load` resume; descriptors for Claude Code and Codex in the registry; settings restructured to per-backend entries (`backends[id].executablePath/model/thinkingLevel`, with migration of the flat M4 shape) plus a backend dropdown; status bar shows the backend name. See gotcha 11 for the protocol differences.
 
 ## Open questions
 

@@ -16,22 +16,32 @@ const SUMMARY_KEYS = [
   "message",
 ];
 
+/** Opaque identifiers make poor summaries; skip them in the fallback scan. */
+function isIdentifierKey(key: string): boolean {
+  return key === "id" || key.endsWith("_id") || key.endsWith("Id");
+}
+
+/** A string value, or a string array joined as a shell command line. */
+function summaryValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value.length > 0 ? value : undefined;
+  if (Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === "string")) {
+    return value.join(" ");
+  }
+  return undefined;
+}
+
 /** One-line description of a tool call taken from its arguments. */
 export function summarizeArgs(args: ToolArgs): string {
   let candidate: string | undefined;
   for (const key of SUMMARY_KEYS) {
-    const value = args[key];
-    if (typeof value === "string" && value.length > 0) {
-      candidate = value;
-      break;
-    }
+    candidate = summaryValue(args[key]);
+    if (candidate !== undefined) break;
   }
   if (candidate === undefined) {
-    for (const value of Object.values(args)) {
-      if (typeof value === "string" && value.length > 0) {
-        candidate = value;
-        break;
-      }
+    for (const [key, value] of Object.entries(args)) {
+      if (isIdentifierKey(key)) continue;
+      candidate = summaryValue(value);
+      if (candidate !== undefined) break;
     }
   }
   if (candidate === undefined) return "";

@@ -117,7 +117,18 @@ export type SessionEvent =
       readonly toolName: string;
       readonly args: ToolArgs;
     }
-  | { readonly kind: "tool_update"; readonly toolCallId: string; readonly output: string }
+  /**
+   * Streamed tool progress. `toolName`/`args` are optional refinements for
+   * backends that learn a tool call's real title or input after announcing
+   * it (ACP adapters do this); when absent the original values stand.
+   */
+  | {
+      readonly kind: "tool_update";
+      readonly toolCallId: string;
+      readonly output: string;
+      readonly toolName?: string;
+      readonly args?: ToolArgs;
+    }
   | {
       readonly kind: "tool_end";
       readonly toolCallId: string;

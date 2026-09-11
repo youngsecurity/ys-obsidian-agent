@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Obsidian desktop plugin hosting a real coding-agent harness inside the vault. Pi first via RPC mode, ACP-speaking agents later.
+Obsidian desktop plugin hosting a real coding-agent harness inside the vault. Pi via RPC mode, plus Claude Code and Codex via ACP adapters.
 
 Read [docs/design.md](docs/design.md) before making changes. It defines the architecture, the backend contract, known Electron gotchas, and the milestone plan.
 

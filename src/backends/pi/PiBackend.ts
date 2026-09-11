@@ -221,8 +221,14 @@ export class PiBackendProcess implements BackendProcess {
     this.writeCommand({ type: "follow_up", message });
   }
 
+  /**
+   * Interactive-stop semantics (pi docs: send `clear_queue` before `abort`):
+   * queued steer/follow-up text is dropped so a stop does not immediately
+   * kick off the next queued prompt. Matches the ACP backend.
+   */
   async abort(): Promise<void> {
     this.assertWritable();
+    this.writeCommand({ type: "clear_queue" });
     this.writeCommand({ type: "abort" });
   }
 
